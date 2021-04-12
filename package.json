@@ -1,0 +1,44 @@
+{
+  "name": "mongodb-realm-rollup",
+  "version": "0.1.0",
+  "description": "Rollup plugin to generate mongodb realm directory structures",
+  "author": "Nathan Smyth",
+  "main": "dist/index.js",
+  "module": "dist/index.es.js",
+  "files": [
+    "dist/index.js",
+    "dist/index.es.js",
+    "dist/index.d.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@rollup/pluginutils": "^4.1.0"
+  },
+  "peerDependencies": {
+    "rollup": ">=2.0.0"
+  },
+  "devDependencies": {
+    "@rollup/plugin-typescript": "^8.2.1",
+    "@types/node": "^14.11.2",
+    "gts": "^3.1.0",
+    "rollup": "^2.45.1",
+    "typescript": "^4.2.4"
+  },
+  "keywords": [
+    "mongodb",
+    "realm",
+    "rollup"
+  ],
+  "scripts": {
+    "lint": "gts lint",
+    "clean": "gts clean",
+    "compile": "tsc",
+    "build": "rollup -c",
+    "fix": "gts fix",
+    "prepare": "yarn run compile",
+    "pretest": "yarn run compile",
+    "posttest": "yarn run lint"
+  }
+}
