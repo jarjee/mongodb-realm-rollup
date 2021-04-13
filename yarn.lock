@@ -128,6 +128,11 @@
   resolved "https://registry.yarnpkg.com/@types/normalize-package-data/-/normalize-package-data-2.4.0.tgz#e486d0d97396d79beedd0a6e33f4534ff6b4973e"
   integrity sha512-f5j5b/Gf71L+dbqxIpQ4Z2WlmI/mPJ0fOkGGmFgtb6sAu97EPczzbS3/tJKxmcYDj55OX6ssqwDAWOHIYDRDGA==
 
+"@types/picomatch@^2.2.1":
+  version "2.2.1"
+  resolved "https://registry.yarnpkg.com/@types/picomatch/-/picomatch-2.2.1.tgz#f9e5a5e6ad03996832975ab7eadfa35791ca2a8f"
+  integrity sha512-26/tQcDmJXYHiaWAAIjnTVL5nwrT+IVaqFZIbBImAuKk/r/j1r/1hmZ7uaOzG6IknqP3QHcNNQ6QO8Vp28lUoA==
+
 "@typescript-eslint/eslint-plugin@^4.2.0":
   version "4.21.0"
   resolved "https://registry.yarnpkg.com/@typescript-eslint/eslint-plugin/-/eslint-plugin-4.21.0.tgz#3fce2bfa76d95c00ac4f33dff369cb593aab8878"
@@ -2111,6 +2116,11 @@ validate-npm-package-license@^3.0.1:
   dependencies:
     spdx-correct "^3.0.0"
     spdx-expression-parse "^3.0.0"
+
+walkdir@^0.4.1:
+  version "0.4.1"
+  resolved "https://registry.yarnpkg.com/walkdir/-/walkdir-0.4.1.tgz#dc119f83f4421df52e3061e514228a2db20afa39"
+  integrity sha512-3eBwRyEln6E1MSzcxcVpQIhRG8Q1jLvEqRmCZqS3dsfXEDR/AhOF4d+jHg1qvDCpYaVRZjENPQyrVxAkQqxPgQ==
 
 which@^2.0.1:
   version "2.0.2"

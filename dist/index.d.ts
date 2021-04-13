@@ -1,2 +1,7 @@
 import { Plugin } from 'rollup';
-export default function realm(options?: {}): Plugin;
+declare type RealmOptions = {
+    rootPath: string;
+    functions?: string[] | string;
+};
+export default function realm(pluginOptions: RealmOptions): Plugin;
+export {};
