@@ -7,7 +7,7 @@ export default {
   plugins: [
     typescript({tsconfig: './tsconfig.json', sourceMap: false, outDir: '.'}),
   ],
-  external: pkg.dependencies,
+  external: Object.keys(pkg.dependencies),
   output: [
     {format: 'cjs', file: pkg.main, exports: 'auto'},
     {format: 'esm', file: pkg.module},
