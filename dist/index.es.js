@@ -5,15 +5,7 @@ import picomatch from 'picomatch';
 import { parse } from 'comment-parser';
 
 const PLUGIN_NAME = 'mongodb-realm';
-function isEmpty(x) {
-    return x === undefined || x === '' || (Array.isArray(x) && x.length === 0);
-}
-function multiMap(v, fn) {
-    if (Array.isArray(v)) {
-        return v.map(fn);
-    }
-    return fn(v);
-}
+
 function parseFunctionJSDoc(jsDoc) {
     const specs = jsDoc.flatMap(block => block.tags);
     const result = specs.reduce((acc, spec) => {
@@ -63,6 +55,16 @@ function functionSettingsToRealm(name, settings) {
         disable_arg_logs: settings.disableArgumentLogging,
     };
 }
+
+function isEmpty(x) {
+    return x === undefined || x === '' || (Array.isArray(x) && x.length === 0);
+}
+function multiMap(v, fn) {
+    if (Array.isArray(v)) {
+        return v.map(fn);
+    }
+    return fn(v);
+}
 const functionSettingsCache = new Map();
 function realm(pluginOptions) {
     return {
@@ -76,14 +78,12 @@ function realm(pluginOptions) {
             const rootAbsolute = path.resolve(pluginOptions.rootPath);
             const files = walkdir.sync(pluginOptions.rootPath);
             if (pluginOptions.functions !== undefined) {
-                const functionFilters = multiMap(pluginOptions.functions, f => path.join(rootAbsolute, f));
-                const functionFiles = files.filter(file => picomatch.isMatch(file, functionFilters));
-                inputEntries.push(...functionFiles.map(fnSource => [
-                    `functions/${path
-                        .basename(fnSource)
-                        .replace(/\.[^/.]+$/, '')}/source`,
-                    fnSource,
-                ]));
+                const functionFiles = generateFunctionInputs(pluginOptions.functions, 'functions', rootAbsolute, files);
+                inputEntries.push(...functionFiles);
+            }
+            if (pluginOptions.httpServices !== undefined) {
+                const httpServiceFiles = generateFunctionInputs(pluginOptions.httpServices, 'services/main/incoming_webhooks', rootAbsolute, files);
+                inputEntries.push(...httpServiceFiles);
             }
             const input = inputEntries.reduce((acc, [k, v]) => {
                 acc[k] = v;
@@ -118,9 +118,11 @@ function realm(pluginOptions) {
         resolveDynamicImport: () => false,
         // Adding all the extra metadata (config.json) if required
         writeBundle: (options, bundle) => {
+            let httpService = false;
             for (const file of Object.values(bundle)) {
                 if (file.type === 'chunk') {
-                    const folder = path.join(options.dir || 'dir', file.fileName.replace('/source.js', ''));
+                    const folder = path.join(options.dir || 'build', file.fileName.replace('/source.js', ''));
+                    const name = path.basename(folder);
                     // Check if the config.json exists.
                     // If it does, merge with what we've parsed
                     // If it doesn't, create the config file
@@ -128,7 +130,6 @@ function realm(pluginOptions) {
                     const rawOriginalConfig = fs.existsSync(configFile) && fs.readFileSync(configFile, 'utf8');
                     // If it's a function, use the default function config
                     if (/\/functions\//.test(configFile)) {
-                        const name = path.basename(folder);
                         const parsedConfig = functionSettingsCache.get(file.facadeModuleId || '');
                         const functionConfig = parsedConfig
                             ? functionSettingsToRealm(name, parsedConfig)
@@ -136,10 +137,51 @@ function realm(pluginOptions) {
                         fs.writeFileSync(configFile, JSON.stringify(rawOriginalConfig
                             ? Object.assign({ id: JSON.parse(rawOriginalConfig).id }, functionConfig) : functionConfig, null, 4));
                     }
+                    // Handling for the service config
+                    if (/\/services\//.test(configFile)) {
+                        httpService = true;
+                        if (!rawOriginalConfig) {
+                            fs.writeFileSync(configFile, JSON.stringify({
+                                name,
+                                run_as_authed_user: true,
+                                run_as_user_id: '',
+                                run_as_user_id_script_source: '',
+                                options: {
+                                    httpMethod: 'POST',
+                                    validationMethod: 'NO_VALIDATION',
+                                },
+                                respond_result: true,
+                                disable_arg_logs: true,
+                                fetch_custom_user_data: false,
+                                create_user_on_auth: false,
+                            }, null, 4));
+                        }
+                    }
                 }
+            }
+            // If there was a 'service', generate the config if unavailable
+            if (httpService) {
+                const serviceConfig = path.join(options.dir || 'build', 'services/main/config.json');
+                fs.existsSync(serviceConfig) ||
+                    fs.writeFileSync(serviceConfig, JSON.stringify({
+                        name: 'main',
+                        type: 'http',
+                        config: {},
+                        version: 1,
+                    }, null, 4));
             }
         },
     };
+}
+function generateFunctionInputs(fileFilters, realmFolder, rootAbsolutePath, files) {
+    const functionFilters = multiMap(fileFilters, f => path.join(rootAbsolutePath, f));
+    const functionFiles = files.filter(file => picomatch.isMatch(file, functionFilters));
+    return functionFiles.map(fnSource => [
+        `${realmFolder}/${path
+            .basename(fnSource)
+            .replace(/\.[^/.]+$/, '')}/source`,
+        fnSource,
+    ]);
 }
 
 export default realm;

@@ -6,13 +6,19 @@ import path from 'path';
 import walkdir from 'walkdir';
 import picomatch from 'picomatch';
 import {parse} from 'comment-parser';
-import type {Block} from 'comment-parser';
 
-const PLUGIN_NAME = 'mongodb-realm';
+import {
+  FunctionSettings,
+  validateFunctionSettings,
+  parseFunctionJSDoc,
+  functionSettingsToRealm,
+} from './function-settings';
+import {PLUGIN_NAME} from './constants';
 
 type RealmOptions = {
   rootPath: string;
   functions?: string[] | string;
+  httpServices?: string[] | string;
 };
 
 function isEmpty(x: unknown) {
@@ -24,91 +30,6 @@ function multiMap<T, V>(v: T | T[], fn: (x: T) => V) {
     return v.map(fn);
   }
   return fn(v);
-}
-
-type FunctionSettings = {
-  private?: true;
-  public?: true;
-  system?: true;
-  userId?: string;
-  disableArgumentLogging?: true;
-};
-
-type RealmFunctionSettings = {
-  name: string;
-  private: boolean;
-  run_as_system?: true;
-  run_as_user_id?: string;
-  disable_arg_logs?: true;
-};
-
-function parseFunctionJSDoc(jsDoc: Block[]): FunctionSettings {
-  const specs = jsDoc.flatMap(block => block.tags);
-
-  const result = specs.reduce(
-    (acc, spec) => {
-      switch (spec.tag.toLowerCase()) {
-        case 'public':
-          acc.public = true;
-          break;
-        case 'private':
-          acc.private = true;
-          break;
-        case 'system':
-          acc.system = true;
-          break;
-        case 'user':
-          acc.userId = spec.type;
-          break;
-        case 'logarguments':
-          acc.disableArgumentLogging = ['', 'true'].includes(spec.type)
-            ? undefined
-            : true;
-          break;
-        default:
-        // Deliberately do nothing
-      }
-      return acc;
-    },
-    {disableArgumentLogging: true} as FunctionSettings
-  );
-
-  return result;
-}
-
-function validateFunctionSettings(settings: FunctionSettings, id: string) {
-  const result = {...settings};
-  if (settings.private && settings.public) {
-    console.log(
-      `[${PLUGIN_NAME}]: Cannot have both private & public; setting as private in ${id}.`
-    );
-
-    delete result.public;
-  }
-
-  // TODO: Also handle script case when implemented
-  if (settings.userId && settings.system) {
-    console.log(
-      `[${PLUGIN_NAME}]: Cannot have multiple authentications, setting as 'user' in ${id}.`
-    );
-
-    delete result.system;
-  }
-
-  return result;
-}
-
-function functionSettingsToRealm(
-  name: string,
-  settings: FunctionSettings
-): RealmFunctionSettings {
-  return {
-    name,
-    private: settings.private || settings.public === undefined ? true : false,
-    run_as_system: settings.system,
-    run_as_user_id: settings.userId,
-    disable_arg_logs: settings.disableArgumentLogging,
-  };
 }
 
 const functionSettingsCache = new Map<string, FunctionSettings>();
@@ -130,25 +51,25 @@ export default function realm(pluginOptions: RealmOptions): Plugin {
       const files = walkdir.sync(pluginOptions.rootPath);
 
       if (pluginOptions.functions !== undefined) {
-        const functionFilters = multiMap(pluginOptions.functions, f =>
-          path.join(rootAbsolute, f)
+        const functionFiles = generateFunctionInputs(
+          pluginOptions.functions,
+          'functions',
+          rootAbsolute,
+          files
         );
 
-        const functionFiles = files.filter(file =>
-          picomatch.isMatch(file, functionFilters)
+        inputEntries.push(...functionFiles);
+      }
+
+      if (pluginOptions.httpServices !== undefined) {
+        const httpServiceFiles = generateFunctionInputs(
+          pluginOptions.httpServices,
+          'services/main/incoming_webhooks',
+          rootAbsolute,
+          files
         );
 
-        inputEntries.push(
-          ...functionFiles.map(
-            fnSource =>
-              [
-                `functions/${path
-                  .basename(fnSource)
-                  .replace(/\.[^/.]+$/, '')}/source`,
-                fnSource,
-              ] as [string, string]
-          )
-        );
+        inputEntries.push(...httpServiceFiles);
       }
 
       const input = inputEntries.reduce((acc, [k, v]) => {
@@ -196,12 +117,15 @@ export default function realm(pluginOptions: RealmOptions): Plugin {
 
     // Adding all the extra metadata (config.json) if required
     writeBundle: (options, bundle) => {
+      let httpService = false;
+
       for (const file of Object.values(bundle)) {
         if (file.type === 'chunk') {
           const folder = path.join(
-            options.dir || 'dir',
+            options.dir || 'build',
             file.fileName.replace('/source.js', '')
           );
+          const name = path.basename(folder);
 
           // Check if the config.json exists.
           // If it does, merge with what we've parsed
@@ -213,7 +137,6 @@ export default function realm(pluginOptions: RealmOptions): Plugin {
 
           // If it's a function, use the default function config
           if (/\/functions\//.test(configFile)) {
-            const name = path.basename(folder);
             const parsedConfig = functionSettingsCache.get(
               file.facadeModuleId || ''
             );
@@ -233,8 +156,83 @@ export default function realm(pluginOptions: RealmOptions): Plugin {
               )
             );
           }
+
+          // Handling for the service config
+          if (/\/services\//.test(configFile)) {
+            httpService = true;
+            if (!rawOriginalConfig) {
+              fs.writeFileSync(
+                configFile,
+                JSON.stringify(
+                  {
+                    name,
+                    run_as_authed_user: true,
+                    run_as_user_id: '',
+                    run_as_user_id_script_source: '',
+                    options: {
+                      httpMethod: 'POST',
+                      validationMethod: 'NO_VALIDATION',
+                    },
+                    respond_result: true,
+                    disable_arg_logs: true,
+                    fetch_custom_user_data: false,
+                    create_user_on_auth: false,
+                  },
+                  null,
+                  4
+                )
+              );
+            }
+          }
         }
+      }
+
+      // If there was a 'service', generate the config if unavailable
+      if (httpService) {
+        const serviceConfig = path.join(
+          options.dir || 'build',
+          'services/main/config.json'
+        );
+
+        fs.existsSync(serviceConfig) ||
+          fs.writeFileSync(
+            serviceConfig,
+            JSON.stringify(
+              {
+                name: 'main',
+                type: 'http',
+                config: {},
+                version: 1,
+              },
+              null,
+              4
+            )
+          );
       }
     },
   };
+}
+function generateFunctionInputs(
+  fileFilters: string | string[],
+  realmFolder: string,
+  rootAbsolutePath: string,
+  files: string[]
+) {
+  const functionFilters = multiMap(fileFilters, f =>
+    path.join(rootAbsolutePath, f)
+  );
+
+  const functionFiles = files.filter(file =>
+    picomatch.isMatch(file, functionFilters)
+  );
+
+  return functionFiles.map(
+    fnSource =>
+      [
+        `${realmFolder}/${path
+          .basename(fnSource)
+          .replace(/\.[^/.]+$/, '')}/source`,
+        fnSource,
+      ] as [string, string]
+  );
 }
