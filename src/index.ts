@@ -86,7 +86,10 @@ export default function realm(pluginOptions: RealmOptions): Plugin {
     // Could this be better? Definitely.
     transform: (code, id) => {
       // Test if the code has to be transformed
-      if (!id.match(path.join(pluginOptions.rootPath, 'functions'))) {
+      const functionPath = path.join(pluginOptions.rootPath, 'functions');
+      const servicePath = path.join(pluginOptions.rootPath, 'services');
+
+      if (!(id.match(functionPath) || id.match(servicePath))) {
         return null;
       }
 
