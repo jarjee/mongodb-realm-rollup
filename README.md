@@ -100,7 +100,7 @@ You can add annotations to the main export to change what settings get stored in
 
 We currently support:
 | Annotation | Arguments | Feature |
-| --- | --- |
+| --- | --- | --- |
 | Public | N/A | Exposes the function as a public function |
 | Private | N/A | Marks the function as a private function. Applied by default. |
 | System  | N/A | Marks the function to run as the system user |
